@@ -2,7 +2,6 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler
 from sklearn.preprocessing import MinMaxScaler
 from sklearn import datasets
 import susi
@@ -20,18 +19,23 @@ X_train, X_test, y_train, y_test = train_test_split(
 scaler = MinMaxScaler()
 X_train = scaler.fit_transform(X_train)
 X_test = scaler.transform(X_test)
-susi.SOMClassifier()
+
+# Chani's paper hyperparameters
+# m = som.map(xdim = 15, ydim = 10, alg = "som", train=2000)
 som = susi.SOMClassifier(
-    n_rows=5,
-    n_columns=10,
-    n_iter_unsupervised=1000,
+    n_rows=10,
+    n_columns=15,
+    n_iter_unsupervised=2000,
     random_state=0,
 )
 som.fit(X_train, y_train)
 plt.show()
 u_matrix = som.get_u_matrix()
+print(u_matrix)
+estimation = som.get_estimation_map()
 print(som.predict)
-plot_umatrix(u_matrix, 5, 10)
+# plot_umatrix(u_matrix, 10, 15)
+susi.SOMPlots.plot_estimation_map(estimation)
 plt.show()
 
 # TODO
