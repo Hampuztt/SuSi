@@ -51,22 +51,42 @@ def read_and_load_iris_data():
     return data, labels
 
 
+from sklearn.cluster import KMeans
+from sklearn.metrics import davies_bouldin_score
+
+
 if __name__ == "__main__":
     data, labels = read_and_process_seeds_data(SEED_DATA_PATH)
     X_train, X_test, y_train, y_test = train_test_split(
-        data, labels, test_size=1, random_state=1, shuffle=True
+        data, labels, test_size=1, shuffle=True
     )
+    print(data)
     scaler = MinMaxScaler()
-    # X_train = scaler.fit_transform(X_train)
+    X = scaler.fit_transform(X_train)
     # X_test = scaler.transform(X_test)
-    X, y = data.values, labels
+    # X, y = data.values, labels
     som = susi.SOMClustering(n_rows=30, n_columns=30)
     som.fit(X)
     clusters = som.get_clusters(X)
+    # Assuming `clusters` is your 2D array output from the SOM
+    # Let's say you decide to further partition these clusters into k clusters
+    dbi_scores = []
+    n_clusters_options = range(2, 11)  # Testing a range from 2 to 10 clusters
+    for i in n_clusters_options:
+        kmeans = KMeans(n_clusters=i, random_state=42)
+        labels = kmeans.fit_predict(clusters)
+        dbi = davies_bouldin_score(clusters, labels)
+        dbi_scores.append(dbi)
 
-    # som.get_clusters(X_train)
-    print(clusters)
-
-    plt.scatter(x=[c[1] for c in clusters], y=[c[0] for c in clusters], c=y, alpha=1)
-    plt.gca().invert_yaxis()
+    # Plotting the DBI scores
+    plt.figure(figsize=(10, 6))
+    plt.plot(n_clusters_options, dbi_scores, marker="o")
+    plt.title("Davies-Bouldin Index by Number of Clusters")
+    plt.xlabel("Number of clusters")
+    plt.ylabel("DBI Score")
     plt.show()
+
+    # # som.get_clusters(X_train)
+    # plt.scatter(x=[c[1] for c in clusters], y=[c[0] for c in clusters], c=y, alpha=1)
+    # plt.gca().invert_yaxis()
+    # plt.show()
