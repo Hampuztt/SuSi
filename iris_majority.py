@@ -1,5 +1,5 @@
 import numpy as np
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Tuple, Union
 from sklearn.metrics import confusion_matrix, classification_report, accuracy_score
 
 # import pandas as pd
@@ -12,8 +12,11 @@ import susi
 from susi.SOMPlots import plot_nbh_dist_weight_matrix, plot_umatrix
 
 
-def getNeuronClasses(som: susi.SOMClustering, X_train, y_train):
+def getNeuronClasses(
+    som: susi.SOMClustering, X_train: np.ndarray, y_train: np.ndarray
+) -> List[List[Optional[int]]]:
 
+    n_cols, n_rows = som.n_columns, som.n_rows
     neuron_votes: List[List[Dict[int, int]]] = [
         [{} for _ in range(n_cols)] for _ in range(n_rows)
     ]
@@ -21,19 +24,16 @@ def getNeuronClasses(som: susi.SOMClustering, X_train, y_train):
     for bmu, y in zip(som.get_bmus(X_train), y_train):
         # Find the BMU for this instance
         # bmu is a tuple (bmu_x, bmu_y) representing the position of the BMU in the grid
-
-        # If the class label y is not yet in the dictionary for this neuron, initialize it
         if y not in neuron_votes[bmu[0]][bmu[1]]:
             neuron_votes[bmu[0]][bmu[1]][y] = 0
-
         # Increment the vote for this class for the neuron
         neuron_votes[bmu[0]][bmu[1]][y] += 1
 
-    # Decide the class for each neuron by majority voting
     neuron_classes: List[List[Optional[int]]] = [
         [None for _ in range(n_cols)] for _ in range(n_rows)
     ]
 
+    # Decide the class for each neuron by majority voting
     for i in range(n_rows):
         for j in range(n_cols):
             if neuron_votes[i][j]:
@@ -45,9 +45,16 @@ def getNeuronClasses(som: susi.SOMClustering, X_train, y_train):
 
 
 def createReportAndConfussionMatrix(
-    som, X_test, y_test, data, title: str, filename: str
+    som: Union[susi.SOMClassifier, susi.SOMClustering],
+    X_test,
+    y_test,
+    data,
+    title: str,
+    filename: str,
+    y_pred=None,
 ):
-    y_pred = som.predict(X_test)
+    if y_pred is None:
+        y_pred = som.predict(X_test)
     cm = confusion_matrix(y_test, y_pred)
     # report = classification_report(
     #     y_test, y_pred, target_names=data.target_names, output_dict=True
@@ -75,6 +82,39 @@ def createReportAndConfussionMatrix(
     plt.show()
 
 
+def filter_and_predict_test_samples(
+    som, X_test, y_test, labeled_neurons
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Filters test samples based on assigned BMU classes and predicts their classes.
+
+    Parameters:
+    - som: The trained SOM model used to find BMUs for the test samples.
+    - X_test: The test set features.
+    - y_test: The actual labels for the test set.
+    - labeled_neurons: A structure containing class labels for each neuron in the SOM.
+
+    Returns:
+    - new_x_test: The filtered test set features that have an assigned class.
+    - new_y_test: The actual labels corresponding to the filtered test set features.
+    - y_pred: The predicted classes for the filtered test set features.
+    """
+    bmus = som.get_bmus(X_test)
+    y_pred = np.array([])
+    new_x_test, new_y_test = np.empty((0, X_test.shape[1])), np.array([])
+    for i, neuron_pos in enumerate(bmus):
+        neuron_class = labeled_neurons[neuron_pos[0]][neuron_pos[1]]
+        if neuron_class is None:
+            continue
+        new_x_test = np.vstack([new_x_test, X_test[i]])
+        new_y_test = np.append(new_y_test, y_test[i]).astype(int)
+        y_pred = np.append(y_pred, neuron_class).astype(int)
+    assert len(new_x_test) == len(
+        new_y_test
+    ), "Mismatch in filtered test samples and labels length."
+    return new_x_test, new_y_test, y_pred
+
+
 def runSom(n_rows: int, n_cols: int, iterations: int):
     # n_features = 5
     iris = datasets.load_iris()
@@ -93,62 +133,45 @@ def runSom(n_rows: int, n_cols: int, iterations: int):
         n_iter_unsupervised=iterations,
         n_iter_supervised=iterations,
         init_mode_supervised="majority",
+        random_state=55,
     )
-
-    unsupervised_som = susi.SOMClassifier(
-        n_rows=n_rows,
-        n_columns=n_cols,
-        n_iter_unsupervised=iterations,
-        n_iter_supervised=0,
-        init_mode_supervised="majority",
-    )
-
-    # meow_som = susi.SOMClustering(n_rows, n_cols, n_iter_unsupervised=iterations)
-    # meow_som.fit(X_train)
-    # meow = getNeuronClasses(meow_som, X_train, y_train)
-    # bmus = meow_som.get_bmus(X_test)
-    #
-    # accuracy = accuracy_score(y_test, bmus)
-    # print(accuracy)
-    # exit()
-
-    unsupervised_som.fit(X_train, y_train)
     supervised_som.fit(X_train, y_train)
-    # unsupervised_classes = getNeuronClasses(unsupervised_som, X_train, y_train)
-    # supervised_classes = getNeuronClasses(supervised_som, X_train, y_train)
+
+    majority_som = susi.SOMClustering(
+        n_rows=n_rows, n_columns=n_cols, n_iter_unsupervised=iterations, random_state=55
+    )
+    majority_som.fit(X_train)
+
+    labeled_neurons = getNeuronClasses(majority_som, X_train, y_train)
+    filtered_x_test, filtered_y_test, majority_pred = filter_and_predict_test_samples(
+        majority_som, X_test, y_test, labeled_neurons
+    )
 
     createReportAndConfussionMatrix(
         supervised_som,
-        X_test,
-        y_test,
+        filtered_x_test,
+        filtered_y_test,
         iris,
         f"supervised_som_{iterations}_iter",
         f"supervised_{iterations}_iter_{n_cols}x{n_rows}",
     )
 
     createReportAndConfussionMatrix(
-        unsupervised_som,
-        X_test,
-        y_test,
+        majority_som,
+        filtered_x_test,
+        filtered_y_test,
         iris,
-        f"unsupervised_som_{iterations}_iter",
+        f"unsupervised_som_{iterations}_iter_majority_voting",
         f"unsupervised_{iterations}_iter_{n_cols}x{n_rows}",
+        majority_pred,
     )
 
 
 if __name__ == "__main__":
-    # map_sizes = [(5, 5), (5, 10)]
-    # iterations = [1000, 10000]
     map_sizes = [(5, 10)]
     iterations = [10000]
+    # map_sizes = [(10, 5)]
+    # iterations = [1000, 5000, 10000]
     for n_cols, n_rows in map_sizes:
         for iter in iterations:
-            print("wat")
             runSom(n_rows, n_cols, iter)
-# TODO
-# labels = iris.target
-# data = pd.DataFrame(iris.data[::4])
-# data.columns = iris.feature_names
-
-
-# get the data
