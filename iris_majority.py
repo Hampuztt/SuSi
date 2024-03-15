@@ -144,9 +144,20 @@ def createReportAndConfussionMatrix(
     plt.show()
 
 
-def impute_prediction_with_distance(
+def find_nearest_class_by_distance(
     labeled_neurons: np.ndarray, bmu_position: np.ndarray
 ) -> int:
+    """
+
+    Parameters:
+    labeled_neurons (np.ndarray): A 2D array of labeled neurons, where each element
+                                  is the class of the neuron or None if not classified.
+    bmu_position (np.ndarray): The (x, y) position of the neuron in question.
+
+    Returns:
+    int: The imputed class for the neuron based on its neighbors.
+    """
+
     def get_neighbors_at_distance(x: int, y: int, distance: int) -> List[Any]:
         neighbors = []
         for i in range(
@@ -205,7 +216,7 @@ def filter_and_predict_test_samples(
             elif reject_approach is RejectApproaches.RANDOM:
                 neuron_class = random.randint(0, amountOfPredictedClasses)
             elif reject_approach is RejectApproaches.CLOSEST_NEIGHBOUR:
-                neuron_class = impute_prediction_with_distance(
+                neuron_class = find_nearest_class_by_distance(
                     labeled_neurons, neuron_pos
                 )
 
@@ -225,8 +236,6 @@ def runSom(
     dataset: Bunch,
     reject_approach=RejectApproaches.IGNORE,
 ):
-    # n_features = 5
-    # dataset = datasets.load_iris()
 
     X_train, X_test, y_train, y_test = train_test_split(
         dataset.data, dataset.target, test_size=0.5, random_state=55
