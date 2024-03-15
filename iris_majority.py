@@ -78,7 +78,7 @@ def load_wheat_data() -> Bunch:
 
 def getNeuronClasses(
     som: susi.SOMClustering, X_train: np.ndarray, y_train: np.ndarray
-) -> List[List[Optional[int]]]:
+) -> np.ndarray:
 
     n_cols, n_rows = som.n_columns, som.n_rows
     neuron_votes: List[List[Dict[int, int]]] = [
@@ -93,9 +93,7 @@ def getNeuronClasses(
         # Increment the vote for this class for the neuron
         neuron_votes[bmu[0]][bmu[1]][y] += 1
 
-    neuron_classes: List[List[Optional[int]]] = [
-        [None for _ in range(n_cols)] for _ in range(n_rows)
-    ]
+    neuron_classes = np.empty((n_rows, n_cols), dtype=object)
 
     # Decide the class for each neuron by majority voting
     for i in range(n_rows):
@@ -146,31 +144,34 @@ def createReportAndConfussionMatrix(
     plt.show()
 
 
-def impute_prediction_with_distance(prediction_grid: np.ndarray, index: int) -> None:
+def impute_prediction_with_distance(
+    labeled_neurons: np.ndarray, bmu_position: np.ndarray
+) -> int:
     def get_neighbors_at_distance(x: int, y: int, distance: int) -> List[Any]:
         neighbors = []
         for i in range(
-            max(0, x - distance), min(x + distance + 1, prediction_grid.shape[0])
+            max(0, x - distance), min(x + distance + 1, labeled_neurons.shape[0])
         ):
             for j in range(
-                max(0, y - distance), min(y + distance + 1, prediction_grid.shape[1])
+                max(0, y - distance), min(y + distance + 1, labeled_neurons.shape[1])
             ):
                 if abs(x - i) == distance or abs(y - j) == distance:
-                    neighbor_value = prediction_grid[i, j]
+                    neighbor_value = labeled_neurons[i, j]
                     if neighbor_value is not None:  # Exclude None values
                         neighbors.append(neighbor_value)
         return neighbors
 
-    y, x = np.unravel_index(index, prediction_grid.shape)
-
-    for distance in range(1, max(prediction_grid.shape[0], prediction_grid.shape[1])):
-        neighbors = get_neighbors_at_distance(x, y, distance)
+    for distance in range(1, max(labeled_neurons.shape[0], labeled_neurons.shape[1])):
+        neighbors = get_neighbors_at_distance(
+            bmu_position[0], bmu_position[1], distance
+        )
         if neighbors:
             best_prediction = mode(neighbors)
             best_prediction = np.atleast_1d(best_prediction)
             if best_prediction.size:
-                prediction_grid[x, y] = best_prediction[0]
-                return
+                # Uncomment to modify the neuron_clases
+                # prediction_grid[x, y] = best_prediction[0]
+                return best_prediction[0]
     assert False, "No predictions made at all"
 
 
@@ -204,8 +205,9 @@ def filter_and_predict_test_samples(
             elif reject_approach is RejectApproaches.RANDOM:
                 neuron_class = random.randint(0, amountOfPredictedClasses)
             elif reject_approach is RejectApproaches.CLOSEST_NEIGHBOUR:
-                impute_prediction_with_distance(neuron_class, i, i)
-                continue
+                neuron_class = impute_prediction_with_distance(
+                    labeled_neurons, neuron_pos
+                )
 
         new_x_test = np.vstack([new_x_test, X_test[i]])
         new_y_test = np.append(new_y_test, y_test[i]).astype(int)
