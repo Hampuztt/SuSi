@@ -175,7 +175,7 @@ def impute_prediction_with_distance(prediction_grid: np.ndarray, index: int) -> 
 
 
 def filter_and_predict_test_samples(
-    som, X_test, y_test, labeled_neurons, reject_approach=RejectApproaches.IGNORE
+    som, X_test, y_test, labeled_neurons, reject_approach: RejectApproaches
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     Filters test samples based on assigned BMU classes and predicts their classes.
@@ -195,7 +195,6 @@ def filter_and_predict_test_samples(
     y_pred = np.array([])
     new_x_test, new_y_test = np.empty((0, X_test.shape[1])), np.array([])
     amountOfPredictedClasses = len(np.unique(bmus))
-    print(labeled_neurons)
 
     for i, neuron_pos in enumerate(bmus):
         neuron_class = labeled_neurons[neuron_pos[0]][neuron_pos[1]]
@@ -252,7 +251,7 @@ def runSom(
 
     labeled_neurons = getNeuronClasses(majority_som, X_train, y_train)
     filtered_x_test, filtered_y_test, majority_pred = filter_and_predict_test_samples(
-        majority_som, X_test, y_test, labeled_neurons
+        majority_som, X_test, y_test, labeled_neurons, reject_approach
     )
 
     createReportAndConfussionMatrix(
