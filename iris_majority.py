@@ -1,18 +1,18 @@
 import numpy as np
-from typing import List, Dict, Optional, Tuple, Union, Any
-from sklearn.metrics import confusion_matrix, classification_report, accuracy_score
+from typing import List, Dict, Tuple, Union, Any
+from sklearn.metrics import confusion_matrix, classification_report, accuracy_score  # type: ignore
 
 # import pandas as pd
 import random
-import seaborn as sns
-import matplotlib.pyplot as plt
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import MinMaxScaler
-from sklearn import datasets
-from sklearn.utils import Bunch
-from scipy.stats import mode
-import susi
-from susi.SOMPlots import plot_nbh_dist_weight_matrix, plot_umatrix
+import seaborn as sns  # type: ignore
+import matplotlib.pyplot as plt  # type: ignore
+from sklearn.model_selection import train_test_split  # type: ignore
+from sklearn.preprocessing import MinMaxScaler  # type: ignore
+from sklearn import datasets  # type: ignore
+from sklearn.utils import Bunch  # type: ignore
+from scipy.stats import mode  # type: ignore
+import susi  # type: ignore
+from susi.SOMPlots import plot_nbh_dist_weight_matrix, plot_umatrix  # type: ignore
 from enum import Enum, auto
 
 
@@ -108,15 +108,12 @@ def getNeuronClasses(
 
 def createReportAndConfussionMatrix(
     som: Union[susi.SOMClassifier, susi.SOMClustering],
-    X_test,
     y_test,
     data,
     title: str,
     filename: str,
-    y_pred=None,
+    y_pred,
 ):
-    if y_pred is None:
-        y_pred = som.predict(X_test)
     cm = confusion_matrix(y_test, y_pred)
     # report = classification_report(
     #     y_test, y_pred, target_names=data.target_names, output_dict=True
@@ -210,6 +207,7 @@ def filter_and_predict_test_samples(
 
     for i, neuron_pos in enumerate(bmus):
         neuron_class = labeled_neurons[neuron_pos[0]][neuron_pos[1]]
+        # If the bmu is a neuron without an assigned class
         if neuron_class is None:
             if reject_approach is RejectApproaches.IGNORE:
                 continue
@@ -220,6 +218,7 @@ def filter_and_predict_test_samples(
                     labeled_neurons, neuron_pos
                 )
 
+        # Since x are are arrays we use vstack, y is just an integer
         new_x_test = np.vstack([new_x_test, X_test[i]])
         new_y_test = np.append(new_y_test, y_test[i]).astype(int)
         y_pred = np.append(y_pred, neuron_class).astype(int)
@@ -229,59 +228,62 @@ def filter_and_predict_test_samples(
     return new_x_test, new_y_test, y_pred
 
 
-def runSom(
+def compareSoms(
     n_rows: int,
     n_cols: int,
     iterations: int,
     dataset: Bunch,
     reject_approach=RejectApproaches.IGNORE,
+    random_state=10,
 ):
 
     X_train, X_test, y_train, y_test = train_test_split(
-        dataset.data, dataset.target, test_size=0.5, random_state=55
+        dataset.data, dataset.target, test_size=0.5, random_state=random_state
     )
 
     scaler = MinMaxScaler()
     X_train = scaler.fit_transform(X_train)
     X_test = scaler.transform(X_test)
-
+    print(X_train.shape, X_test.shape)
     supervised_som = susi.SOMClassifier(
         n_rows=n_rows,
         n_columns=n_cols,
         n_iter_unsupervised=iterations,
         n_iter_supervised=iterations,
-        init_mode_supervised="majority",
-        random_state=55,
+        random_state=random_state,
     )
     supervised_som.fit(X_train, y_train)
+    supervised_y_pred = supervised_som.predict(X_test)
 
+    # Start training unsupervised som
     majority_som = susi.SOMClustering(
         n_rows=n_rows, n_columns=n_cols, n_iter_unsupervised=iterations, random_state=55
     )
     majority_som.fit(X_train)
 
-    labeled_neurons = getNeuronClasses(majority_som, X_train, y_train)
-    filtered_x_test, filtered_y_test, majority_pred = filter_and_predict_test_samples(
+    labeled_neurons = getNeuronClasses(majority_som, X_train, y_train)  # type: ignore
+    # If reject_approach is 'ignore', discard x_test's and y_test's without a matching bmu;
+    # otherwise, keep the original test cases stay unchanged.
+    filtered_x_test, filtered_y_test, majority_y_pred = filter_and_predict_test_samples(
         majority_som, X_test, y_test, labeled_neurons, reject_approach
     )
 
     createReportAndConfussionMatrix(
-        supervised_som,
-        filtered_x_test,
-        filtered_y_test,
-        dataset,
-        f"supervised_som_{iterations}_iter",
-        f"supervised_{iterations}_iter_{n_cols}x{n_rows}",
-    )
-
-    createReportAndConfussionMatrix(
         majority_som,
-        filtered_x_test,
         filtered_y_test,
         dataset,
         f"unsupervised_som_{iterations}_iter_majority_voting",
         f"unsupervised_{iterations}_iter_{n_cols}x{n_rows}",
-        majority_pred,
+        majority_y_pred,
+    )
+
+    createReportAndConfussionMatrix(
+        supervised_som,
+        filtered_y_test,
+        dataset,
+        f"supervised_som_{iterations}_iter",
+        f"supervised_{iterations}_iter_{n_cols}x{n_rows}",
+        supervised_y_pred,
     )
 
 
@@ -296,7 +298,7 @@ if __name__ == "__main__":
     iris_data = datasets.load_iris()
     wheat_data = load_wheat_data()
 
-    datasets = [wheat_data, iris_data]
+    datasets = [iris_data, wheat_data]
     map_sizes = [(10, 10), (5, 10)]
     iterations = [10000]
     # map_sizes = [(10, 5)]
@@ -304,4 +306,6 @@ if __name__ == "__main__":
     for data in datasets:
         for n_cols, n_rows in map_sizes:
             for iter in iterations:
-                runSom(n_rows, n_cols, iter, data, RejectApproaches.CLOSEST_NEIGHBOUR)
+                compareSoms(
+                    n_rows, n_cols, iter, data, RejectApproaches.CLOSEST_NEIGHBOUR
+                )
