@@ -7,7 +7,7 @@ import random
 import seaborn as sns  # type: ignore
 import matplotlib.pyplot as plt  # type: ignore
 from sklearn.model_selection import train_test_split  # type: ignore
-from sklearn.preprocessing import MinMaxScaler  # type: ignore
+from sklearn.preprocessing import MinMaxScaler, StandardScaler  # type: ignore
 from sklearn import datasets  # type: ignore
 from sklearn.utils import Bunch  # type: ignore
 from scipy.stats import mode  # type: ignore
@@ -287,6 +287,145 @@ def compareSoms(
     )
 
 
+def compareAccuracies(
+    n_rows: int,
+    n_cols: int,
+    train_iterations: int,
+    dataset: Bunch,
+    comparisons: int,
+    reject_approach=RejectApproaches.IGNORE,
+    random_state=10,
+):
+    scaler = MinMaxScaler()
+    majority_voting_accuracies = []
+    supervised_som_accuracies = []
+    count = 0
+    for i in range(comparisons):
+        print(count)
+        count += 1
+        X_train, X_test, y_train, y_test = train_test_split(
+            dataset.data, dataset.target, test_size=0.5, random_state=random_state + i
+        )
+        X_train = scaler.fit_transform(X_train)
+        X_test = scaler.transform(X_test)
+        supervised_som = susi.SOMClassifier(
+            n_rows=n_rows,
+            n_columns=n_cols,
+            n_iter_unsupervised=train_iterations,
+            n_iter_supervised=train_iterations,
+            random_state=random_state + i,
+        )
+        supervised_som.fit(X_train, y_train)
+        supervised_y_pred = supervised_som.predict(X_test)
+
+        # Start training unsupervised som
+        majority_som = susi.SOMClustering(
+            n_rows=n_rows,
+            n_columns=n_cols,
+            n_iter_unsupervised=train_iterations,
+            random_state=random_state + i,
+        )
+        majority_som.fit(X_train)
+
+        labeled_neurons = getNeuronClasses(majority_som, X_train, y_train)  # type: ignore
+        # If reject_approach is 'ignore', discard x_test's and y_test's without a matching bmu;
+        # otherwise, keep the original test cases stay unchanged.
+        filtered_x_test, filtered_y_test, majority_y_pred = (
+            filter_and_predict_test_samples(
+                majority_som, X_test, y_test, labeled_neurons, reject_approach
+            )
+        )
+
+        majority_voting_accuracies.append(accuracy_score(y_test, majority_y_pred))
+        supervised_som_accuracies.append(accuracy_score(y_test, supervised_y_pred))
+
+    draw_accuracies(majority_voting_accuracies, supervised_som_accuracies)
+
+
+def draw_accuracies(
+    majority_voting_accuracies: list[int], supervised_som_accuracies: list[int]
+):
+    runs = range(1, len(supervised_som_accuracies) + 1)
+
+    avg_supervised_accuracy = sum(supervised_som_accuracies) / len(
+        supervised_som_accuracies
+    )
+
+    # First, plot the supervised SOM accuracies
+    plt.figure(figsize=(10, 5))
+    plt.subplot(1, 2, 1)  # First subplot in a 1x2 grid
+    plt.plot(
+        runs,
+        supervised_som_accuracies,
+        label="Supervised SOM",
+        color="blue",
+        marker="o",
+    )
+    plt.axhline(
+        y=avg_supervised_accuracy,
+        color="green",
+        linewidth=2,
+        linestyle=":",
+        label="Avg Supervised SOM Accuracy",
+    )
+    # Annotate the average Supervised SOM accuracy line
+    plt.annotate(
+        f"Average: {avg_supervised_accuracy:.2f}%",
+        xy=(1, avg_supervised_accuracy),
+        xycoords=("axes fraction", "data"),
+        xytext=(0, 10),
+        textcoords="offset points",
+        horizontalalignment="right",
+        color="green",
+    )
+    plt.xlabel("Run")
+    plt.ylabel("Accuracy")
+    plt.title("Supervised SOM Accuracies")
+    plt.legend()
+
+    # Then, plot the difference in percentage between the two accuracies
+    # Calculate the difference in percentage
+    accuracy_differences = [
+        (sv - mv) / sv * 100
+        for sv, mv in zip(supervised_som_accuracies, majority_voting_accuracies)
+    ]
+
+    # Calculate the average accuracy difference
+    avg_accuracy_difference = sum(accuracy_differences) / len(accuracy_differences)
+    plt.subplot(1, 2, 2)  # Second subplot in a 1x2 grid
+
+    plt.plot(
+        runs, accuracy_differences, label="Accuracy Difference", color="red", marker="o"
+    )
+    plt.axhline(
+        y=avg_accuracy_difference,
+        color="purple",
+        linewidth=2,
+        linestyle=":",
+        label="Avg Accuracy Difference",
+    )
+    # Annotate the average accuracy difference line
+    plt.annotate(
+        f"Average: {avg_accuracy_difference:.2f}%",
+        xy=(1, avg_accuracy_difference),
+        xycoords=("axes fraction", "data"),
+        xytext=(0, -15),
+        textcoords="offset points",
+        horizontalalignment="right",
+        color="purple",
+    )
+    plt.axhline(
+        0, color="black", linestyle="--"
+    )  # Adds a horizontal line at 0% difference
+    plt.xlabel("Run")
+    plt.ylabel("Supervised - Majority Voting Accuracy Difference (%)")
+    plt.title("Supervised SOM vs. Majority Voting: Accuracy Difference (%)")
+    plt.legend()
+
+    plt.tight_layout()
+    plt.show()
+
+
 """
 5x10 
 10x10
@@ -298,14 +437,17 @@ if __name__ == "__main__":
     iris_data = datasets.load_iris()
     wheat_data = load_wheat_data()
 
-    datasets = [iris_data, wheat_data]
-    map_sizes = [(10, 10), (5, 10)]
+    datasets = [wheat_data]
+    map_sizes = [(5, 10)]
     iterations = [10000]
     # map_sizes = [(10, 5)]
     # iterations = [1000, 5000, 10000]
     for data in datasets:
         for n_cols, n_rows in map_sizes:
             for iter in iterations:
-                compareSoms(
-                    n_rows, n_cols, iter, data, RejectApproaches.CLOSEST_NEIGHBOUR
+                # compareSoms(
+                #     n_rows, n_cols, iter, data, RejectApproaches.CLOSEST_NEIGHBOUR
+                # )
+                compareAccuracies(
+                    n_rows, n_rows, iter, data, 100, RejectApproaches.CLOSEST_NEIGHBOUR
                 )
