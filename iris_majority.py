@@ -71,6 +71,7 @@ def load_wheat_data() -> Bunch:
         feature_names=feature_names,
         target_names=target_names,
         DESCR="Seeds Dataset: Features include area, perimeter, etc., with labels for Kama, Rosa, and Canadian.",
+        filename="wheat.cvs",
     )
 
     return seeds_data
@@ -339,21 +340,31 @@ def compareAccuracies(
         majority_voting_accuracies.append(accuracy_score(y_test, majority_y_pred))
         supervised_som_accuracies.append(accuracy_score(y_test, supervised_y_pred))
 
-    draw_accuracies(majority_voting_accuracies, supervised_som_accuracies)
+    draw_accuracies(
+        majority_voting_accuracies, supervised_som_accuracies, dataset["filename"]
+    )
 
 
 def draw_accuracies(
-    majority_voting_accuracies: list[int], supervised_som_accuracies: list[int]
+    majority_voting_accuracies: list[int],
+    supervised_som_accuracies: list[int],
+    dataset_name="",
 ):
+    if dataset_name:
+        dataset_name = dataset_name.split(".")[0].upper()
     runs = range(1, len(supervised_som_accuracies) + 1)
 
     avg_supervised_accuracy = sum(supervised_som_accuracies) / len(
         supervised_som_accuracies
     )
+    avg_majority_voting_accuracy = sum(majority_voting_accuracies) / len(
+        majority_voting_accuracies
+    )
 
     # First, plot the supervised SOM accuracies
-    plt.figure(figsize=(10, 5))
-    plt.subplot(1, 2, 1)  # First subplot in a 1x2 grid
+    # Plot supervised and majority voting accuracies
+    plt.figure(figsize=(12, 5))
+    plt.subplot(1, 1, 1)  # First subplot in a 1x2 grid
     plt.plot(
         runs,
         supervised_som_accuracies,
@@ -361,39 +372,45 @@ def draw_accuracies(
         color="blue",
         marker="o",
     )
+    plt.plot(
+        runs,
+        majority_voting_accuracies,
+        label="Majority Voting",
+        color="orange",
+        marker="x",
+    )
     plt.axhline(
         y=avg_supervised_accuracy,
         color="green",
         linewidth=2,
         linestyle=":",
-        label="Avg Supervised SOM Accuracy",
+        label=f"Avg Supervised SOM Accuracy ({100*avg_supervised_accuracy:.2f}%)",
     )
-    # Annotate the average Supervised SOM accuracy line
-    plt.annotate(
-        f"Average: {avg_supervised_accuracy:.2f}%",
-        xy=(1, avg_supervised_accuracy),
-        xycoords=("axes fraction", "data"),
-        xytext=(0, 10),
-        textcoords="offset points",
-        horizontalalignment="right",
-        color="green",
+    plt.axhline(
+        y=avg_majority_voting_accuracy,
+        color="red",
+        linewidth=2,
+        linestyle=":",
+        label=f"Avg Majority Voting Accuracy ({100*avg_majority_voting_accuracy:.2f}%)",
     )
+
     plt.xlabel("Run")
-    plt.ylabel("Accuracy")
-    plt.title("Supervised SOM Accuracies")
+    plt.ylabel("Accuracy (%)")
+    plt.title(f"Accuracies: Supervised SOM and Majority Voting ({dataset_name})")
     plt.legend()
+
+    plt.savefig("Images/" + "Accuracies_" + dataset_name, bbox_inches="tight")
+    plt.show()
 
     # Then, plot the difference in percentage between the two accuracies
     # Calculate the difference in percentage
+    # Then, plot the difference in accuracy
     accuracy_differences = [
-        (sv - mv) / sv * 100
+        (sv - mv)
         for sv, mv in zip(supervised_som_accuracies, majority_voting_accuracies)
     ]
-
-    # Calculate the average accuracy difference
     avg_accuracy_difference = sum(accuracy_differences) / len(accuracy_differences)
-    plt.subplot(1, 2, 2)  # Second subplot in a 1x2 grid
-
+    plt.subplot(1, 1, 1)  # Second subplot in a 1x2 grid
     plt.plot(
         runs, accuracy_differences, label="Accuracy Difference", color="red", marker="o"
     )
@@ -402,27 +419,20 @@ def draw_accuracies(
         color="purple",
         linewidth=2,
         linestyle=":",
-        label="Avg Accuracy Difference",
-    )
-    # Annotate the average accuracy difference line
-    plt.annotate(
-        f"Average: {avg_accuracy_difference:.2f}%",
-        xy=(1, avg_accuracy_difference),
-        xycoords=("axes fraction", "data"),
-        xytext=(0, -15),
-        textcoords="offset points",
-        horizontalalignment="right",
-        color="purple",
+        label=f"Avg Accuracy Difference ({100*avg_accuracy_difference:.2f}%)",
     )
     plt.axhline(
         0, color="black", linestyle="--"
     )  # Adds a horizontal line at 0% difference
     plt.xlabel("Run")
-    plt.ylabel("Supervised - Majority Voting Accuracy Difference (%)")
-    plt.title("Supervised SOM vs. Majority Voting: Accuracy Difference (%)")
+    plt.ylabel("Accuracy Difference (%)")
+    plt.title(
+        f"Accuracy Difference: Supervised SOM vs Majority Voting ({dataset_name})"
+    )
     plt.legend()
 
     plt.tight_layout()
+    plt.savefig("Images/" + "Accuracies_compare" + dataset_name, bbox_inches="tight")
     plt.show()
 
 
@@ -437,9 +447,9 @@ if __name__ == "__main__":
     iris_data = datasets.load_iris()
     wheat_data = load_wheat_data()
 
-    datasets = [wheat_data]
+    datasets = [wheat_data, iris_data]
     map_sizes = [(5, 10)]
-    iterations = [10000]
+    iterations = [1000]
     # map_sizes = [(10, 5)]
     # iterations = [1000, 5000, 10000]
     for data in datasets:
