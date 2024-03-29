@@ -373,11 +373,12 @@ def compareSoms(
         n_iter_unsupervised=iterations,
         n_iter_supervised=iterations,
         random_state=random_state,
+        do_class_weighting=False,
     )
     supervised_som.fit(X_train, y_train)
     print("supervised finish")
-    supervised_y_pred = supervised_som.predict(X_train)
-    print(supervised_som.score(X_test, y_test) * 100)
+    supervised_y_pred = supervised_som.predict(X_test)
+    print("majority %", supervised_som.score(X_test, y_test) * 100)
 
     # Start training unsupervised som
     majority_som = susi.SOMClustering(
@@ -396,7 +397,7 @@ def compareSoms(
     # If reject_approach is 'ignore', discard x_test's and y_test's without a matching bmu;
     # otherwise, keep the original test cases stay unchanged.
     filtered_x_test, filtered_y_test, majority_y_pred = filter_and_predict_test_samples(
-        majority_som, X_train, y_train, labeled_neurons, reject_approach
+        majority_som, X_test, y_test, labeled_neurons, reject_approach
     )
     print("filter finish")
 
@@ -593,15 +594,9 @@ if __name__ == "__main__":
     iris_data = datasets.load_iris()
     wheat_data = load_wheat_data()
     spectral_data = load_hyperspectral_data()
-    # print(f"meow: {spectral_data.target_names}")
-    # print(f"meow: {spectral_data.feature_names}")
-    # print(f"meow: {wheat_data.target_names}")
-    # print(f"meow: {wheat_data.feature_names}")
 
-    # soildata()
-    # exit()
-    datasets = [spectral_data]
-    map_sizes = [(10, 10)]
+    datasets = [iris_data, wheat_data]
+    map_sizes = [(80, 80)]
     iterations = [60000]
     # map_sizes = [(10, 5)]
     # iterations = [1000, 5000, 10000]
