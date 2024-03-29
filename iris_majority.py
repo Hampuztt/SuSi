@@ -5,7 +5,9 @@ from sklearn.metrics import confusion_matrix, classification_report, accuracy_sc
 from scipy.io import loadmat
 from pprint import pprint
 
-# import pandas as pd import random import seaborn as sns  # type: ignore
+# import pandas as pd
+import random
+import seaborn as sns  # type: ignore
 import matplotlib.pyplot as plt  # type: ignore
 from sklearn.model_selection import train_test_split  # type: ignore
 from sklearn.preprocessing import MinMaxScaler, StandardScaler  # type: ignore
@@ -600,16 +602,19 @@ if __name__ == "__main__":
     # exit()
     datasets = [spectral_data]
     map_sizes = [(10, 10)]
-    iterations = [1000]
+    iterations = [60000]
     # map_sizes = [(10, 5)]
     # iterations = [1000, 5000, 10000]
+    import time
 
+    start = time.time()
     for data in datasets:
         for n_cols, n_rows in map_sizes:
             for iter in iterations:
                 compareSoms(
                     n_rows, n_cols, iter, data, RejectApproaches.CLOSEST_NEIGHBOUR
                 )
+                print(time.time() - start)
                 # compareAccuracies(
                 #     n_rows, n_rows, iter, data, 10, RejectApproaches.CLOSEST_NEIGHBOUR
                 # )
