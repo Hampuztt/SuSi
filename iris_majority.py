@@ -1,6 +1,9 @@
 import numpy as np
+from dataclasses import dataclass
 from typing import List, Dict, Tuple, Union, Any
 from sklearn.metrics import confusion_matrix, classification_report, accuracy_score  # type: ignore
+from scipy.io import loadmat
+from pprint import pprint
 
 # import pandas as pd
 import random
@@ -20,6 +23,62 @@ class RejectApproaches(Enum):
     IGNORE = (auto(),)
     RANDOM = (auto(),)
     CLOSEST_NEIGHBOUR = auto()
+
+
+@dataclass
+class ParametersFromPaper:
+    init = "random"
+    learning_start = 0.7
+    learning_end = 0.07
+    grid_x = 80
+    grid_y = 80
+    supervised_iteraetions = 60000
+    unsupervised_iterations = 60000
+    init_method = "random"
+    test_split = 0.7
+    # Rest deafult parameters
+
+
+def load_hyperspectral_data() -> Bunch:
+    SPECTRAL_IMAGE_PATH = "datasets/AVIRIS_SalinasValley/Salinas.mat"
+    SPECTRAL_GT_PATH = "datasets/AVIRIS_SalinasValley/Salinas_gt.mat"
+    data_dict = loadmat(SPECTRAL_IMAGE_PATH)
+    gt_dict = loadmat(SPECTRAL_GT_PATH)
+    label_to_name = {
+        1: "Brocoli_green_weeds_1",
+        2: "Brocoli_green_weeds_2",
+        3: "Fallow",
+        4: "Fallow_rough_plow",
+        5: "Fallow_smooth",
+        6: "Stubble",
+        7: "Celery",
+        8: "Grapes_untrained",
+        9: "Soil_vinyard_develop",
+        10: "Corn_senesced_green_weeds",
+        11: "Lettuce_romaine_4wk",
+        12: "Lettuce_romaine_5wk",
+        13: "Lettuce_romaine_6wk",
+        14: "Lettuce_romaine_7wk",
+        15: "Vinyard_untrained",
+        16: "Vinyard_vertical_trellis",
+    }
+
+    target_names = [label_to_name[label] for label in sorted(label_to_name)]
+    data = data_dict[list(data_dict.keys())[-1]]  # Assuming the last key holds the data
+    gt = gt_dict[list(gt_dict.keys())[-1]]  # Assuming the last key holds the data
+
+    # Reshape the data
+    nrows, ncols, nbands = data.shape
+    data_reshaped = data.reshape((nrows * ncols, nbands))
+    gt_reshaped = gt.flatten()
+
+    return Bunch(
+        data=data_reshaped,
+        target=gt_reshaped,
+        feature_names=[f"Band {i+1}" for i in range(nbands)],
+        target_names=target_names,
+        DESCR="Hyperspectral Image Dataset",
+    )
 
 
 def load_wheat_data() -> Bunch:
@@ -116,6 +175,7 @@ def createReportAndConfussionMatrix(
     y_pred,
 ):
     cm = confusion_matrix(y_test, y_pred)
+    cm = cm.astype("float") / cm.sum(axis=1)[:, np.newaxis]
     # report = classification_report(
     #     y_test, y_pred, target_names=data.target_names, output_dict=True
     # )
@@ -125,7 +185,7 @@ def createReportAndConfussionMatrix(
     sns.heatmap(
         cm,
         annot=True,
-        fmt="d",
+        fmt=".2f",
         cmap="Blues",
         xticklabels=data.target_names,
         yticklabels=data.target_names,
@@ -138,8 +198,45 @@ def createReportAndConfussionMatrix(
     plt.savefig("Images/" + filename, bbox_inches="tight")
     # Display metrics
     print(f"Classification Report '{title}':")
-    print(classification_report(y_test, y_pred, target_names=data.target_names))
+    # print(y_test, y_pr)
+    # print(classification_report(y_test, y_pred, target_names=data.target_names))
     plt.show()
+
+
+def find_nearest_class_by_distance_optimized(
+    labeled_neurons: np.ndarray, bmu_position: np.ndarray
+) -> int:
+    max_distance = max(labeled_neurons.shape)
+
+    # Create a masked array where unclassified neurons are masked out
+    masked_labeled_neurons = np.ma.masked_array(
+        labeled_neurons, mask=labeled_neurons == None
+    )
+
+    for distance in range(1, max_distance):
+        min_row = max(0, bmu_position[0] - distance)
+        max_row = min(bmu_position[0] + distance + 1, labeled_neurons.shape[0])
+        min_col = max(0, bmu_position[1] - distance)
+        max_col = min(bmu_position[1] + distance + 1, labeled_neurons.shape[1])
+
+        # Extracting edge elements at a given "Manhattan distance" from bmu_position
+        top_edge = masked_labeled_neurons[min_row:max_row, min_col].compressed()
+        bottom_edge = masked_labeled_neurons[min_row:max_row, max_col - 1].compressed()
+        left_edge = masked_labeled_neurons[
+            min_row, min_col + 1 : max_col - 1
+        ].compressed()
+        right_edge = masked_labeled_neurons[
+            max_row - 1, min_col + 1 : max_col - 1
+        ].compressed()
+
+        neighbors = np.concatenate([top_edge, bottom_edge, left_edge, right_edge])
+
+        if neighbors.size > 0:
+            best_prediction = mode(neighbors, nan_policy="omit").mode
+            if best_prediction.size:
+                return best_prediction[0]
+
+    assert False, "No predictions made at all"
 
 
 def find_nearest_class_by_distance(
@@ -202,29 +299,45 @@ def filter_and_predict_test_samples(
     - y_pred: The predicted classes for the filtered test set features.
     """
     bmus = som.get_bmus(X_test)
-    y_pred = np.array([])
-    new_x_test, new_y_test = np.empty((0, X_test.shape[1])), np.array([])
-    amountOfPredictedClasses = len(np.unique(bmus))
+    # y_pred = np.array([])
+    # new_x_test, new_y_test = np.empty((0, X_test.shape[1])), np.array([])
+    new_x_test_list, new_y_test_list, y_pred_list = [], [], []
 
+    if reject_approach is RejectApproaches.RANDOM:
+        predicted_classes = [
+            labeled_neurons[bmu[0]][bmu[1]]
+            for bmu in bmus
+            if labeled_neurons[bmu[0]][bmu[1]] is not None
+        ]
+        amountOfPredictedClasses = len(np.unique(predicted_classes))
+
+    print(len(bmus))
+    one_percent = len(bmus) // 100
+    count = 0
     for i, neuron_pos in enumerate(bmus):
+        # if i % one_percent == 0:
+        #     count += 1
+        # print(f"Finished {count} % of filter loop")
         neuron_class = labeled_neurons[neuron_pos[0]][neuron_pos[1]]
         # If the bmu is a neuron without an assigned class
         if neuron_class is None:
             if reject_approach is RejectApproaches.IGNORE:
                 continue
             elif reject_approach is RejectApproaches.RANDOM:
-                neuron_class = random.randint(0, amountOfPredictedClasses)
+                neuron_class = random.randint(1, amountOfPredictedClasses)
             elif reject_approach is RejectApproaches.CLOSEST_NEIGHBOUR:
                 neuron_class = find_nearest_class_by_distance(
                     labeled_neurons, neuron_pos
                 )
 
-        # Since x are are arrays we use vstack, y is just an integer
-        new_x_test = np.vstack([new_x_test, X_test[i]])
-        new_y_test = np.append(new_y_test, y_test[i]).astype(int)
-        y_pred = np.append(y_pred, neuron_class).astype(int)
-    assert len(new_x_test) == len(
-        new_y_test
+        new_x_test_list.append(X_test[i])
+        new_y_test_list.append(int(y_test[i]))
+        y_pred_list.append(int(neuron_class))
+    new_x_test = np.array(new_x_test_list)
+    new_y_test = np.array(new_y_test_list, dtype=int)
+    y_pred = np.array(y_pred_list, dtype=int)
+    assert len(new_x_test_list) == len(
+        new_y_test_list
     ), "Mismatch in filtered test samples and labels length."
     return new_x_test, new_y_test, y_pred
 
@@ -237,16 +350,24 @@ def compareSoms(
     reject_approach=RejectApproaches.IGNORE,
     random_state=10,
 ):
+    parameters = ParametersFromPaper()
+    LEARN_START = 0.7
+    LEARN_END = 0.07
 
     X_train, X_test, y_train, y_test = train_test_split(
-        dataset.data, dataset.target, test_size=0.5, random_state=random_state
+        dataset.data,
+        dataset.target,
+        test_size=parameters.test_split,
+        random_state=random_state,
     )
 
-    scaler = MinMaxScaler()
+    scaler = StandardScaler()
     X_train = scaler.fit_transform(X_train)
     X_test = scaler.transform(X_test)
     print(X_train.shape, X_test.shape)
     supervised_som = susi.SOMClassifier(
+        learning_rate_start=parameters.learning_start,
+        learning_rate_end=parameters.learning_end,
         n_rows=n_rows,
         n_columns=n_cols,
         n_iter_unsupervised=iterations,
@@ -254,20 +375,30 @@ def compareSoms(
         random_state=random_state,
     )
     supervised_som.fit(X_train, y_train)
-    supervised_y_pred = supervised_som.predict(X_test)
+    print("supervised finish")
+    supervised_y_pred = supervised_som.predict(X_train)
+    print(supervised_som.score(X_test, y_test) * 100)
 
     # Start training unsupervised som
     majority_som = susi.SOMClustering(
-        n_rows=n_rows, n_columns=n_cols, n_iter_unsupervised=iterations, random_state=55
+        learning_rate_start=LEARN_START,
+        learning_rate_end=LEARN_END,
+        n_rows=n_rows,
+        n_columns=n_cols,
+        n_iter_unsupervised=iterations,
+        random_state=55,
     )
     majority_som.fit(X_train)
+    print("unsuper finish")
 
     labeled_neurons = getNeuronClasses(majority_som, X_train, y_train)  # type: ignore
+    print("Labeled neurons found")
     # If reject_approach is 'ignore', discard x_test's and y_test's without a matching bmu;
     # otherwise, keep the original test cases stay unchanged.
     filtered_x_test, filtered_y_test, majority_y_pred = filter_and_predict_test_samples(
-        majority_som, X_test, y_test, labeled_neurons, reject_approach
+        majority_som, X_train, y_train, labeled_neurons, reject_approach
     )
+    print("filter finish")
 
     createReportAndConfussionMatrix(
         majority_som,
@@ -436,6 +567,21 @@ def draw_accuracies(
     plt.show()
 
 
+def soildata():
+    data = loadmat("datasets/AVIRIS_SalinasValley/Salinas_gt.mat")
+    print(data.keys())
+
+    # for key in data:
+    #     print(key, data[key])
+    # pprint(data["salinas_gt"])
+    for i in data["salinas_gt"]:
+        print(i)
+
+    print(len(data["salinas_gt"]))
+    print(len(data["salinas_gt"][0]))
+    # pprint(data)
+
+
 """
 5x10 
 10x10
@@ -446,18 +592,25 @@ Rejection approach of dealing with neurons, (go random), try neighbours,
 if __name__ == "__main__":
     iris_data = datasets.load_iris()
     wheat_data = load_wheat_data()
+    spectral_data = load_hyperspectral_data()
+    # print(f"meow: {spectral_data.target_names}")
+    # print(f"meow: {spectral_data.feature_names}")
+    # print(f"meow: {wheat_data.target_names}")
+    # print(f"meow: {wheat_data.feature_names}")
 
-    datasets = [wheat_data, iris_data]
-    map_sizes = [(5, 10)]
-    iterations = [1000]
+    # soildata()
+    # exit()
+    datasets = [spectral_data]
+    map_sizes = [(80, 80)]
+    iterations = [60000]
     # map_sizes = [(10, 5)]
     # iterations = [1000, 5000, 10000]
     for data in datasets:
         for n_cols, n_rows in map_sizes:
             for iter in iterations:
-                # compareSoms(
-                #     n_rows, n_cols, iter, data, RejectApproaches.CLOSEST_NEIGHBOUR
-                # )
-                compareAccuracies(
-                    n_rows, n_rows, iter, data, 100, RejectApproaches.CLOSEST_NEIGHBOUR
+                compareSoms(
+                    n_rows, n_cols, iter, data, RejectApproaches.CLOSEST_NEIGHBOUR
                 )
+                # compareAccuracies(
+                #     n_rows, n_rows, iter, data, 10, RejectApproaches.CLOSEST_NEIGHBOUR
+                # )
