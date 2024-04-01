@@ -64,8 +64,8 @@ def load_hyperspectral_data() -> Bunch:
     }
 
     target_names = [label_to_name[label] for label in sorted(label_to_name)]
-    data = data_dict[list(data_dict.keys())[-1]]  # Assuming the last key holds the data
-    gt = gt_dict[list(gt_dict.keys())[-1]]  # Assuming the last key holds the data
+    data = data_dict[list(data_dict.keys())[-1]]
+    gt = gt_dict[list(gt_dict.keys())[-1]]
 
     # Reshape the data
     nrows, ncols, nbands = data.shape
@@ -78,6 +78,7 @@ def load_hyperspectral_data() -> Bunch:
         feature_names=[f"Band {i+1}" for i in range(nbands)],
         target_names=target_names,
         DESCR="Hyperspectral Image Dataset",
+        filename="Salinas",
     )
 
 
@@ -437,7 +438,7 @@ def compareAccuracies(
         print(count)
         count += 1
         X_train, X_test, y_train, y_test = train_test_split(
-            dataset.data, dataset.target, test_size=0.5, random_state=random_state + i
+            dataset.data, dataset.target, test_size=0.7, random_state=random_state + i
         )
         X_train = scaler.fit_transform(X_train)
         X_test = scaler.transform(X_test)
@@ -568,21 +569,6 @@ def draw_accuracies(
     plt.show()
 
 
-def soildata():
-    data = loadmat("datasets/AVIRIS_SalinasValley/Salinas_gt.mat")
-    print(data.keys())
-
-    # for key in data:
-    #     print(key, data[key])
-    # pprint(data["salinas_gt"])
-    for i in data["salinas_gt"]:
-        print(i)
-
-    print(len(data["salinas_gt"]))
-    print(len(data["salinas_gt"][0]))
-    # pprint(data)
-
-
 """
 5x10 
 10x10
@@ -595,21 +581,19 @@ if __name__ == "__main__":
     wheat_data = load_wheat_data()
     spectral_data = load_hyperspectral_data()
 
-    datasets = [iris_data, wheat_data]
+    datasets = [spectral_data]
     map_sizes = [(80, 80)]
     iterations = [60000]
     # map_sizes = [(10, 5)]
     # iterations = [1000, 5000, 10000]
-    import time
 
-    start = time.time()
     for data in datasets:
         for n_cols, n_rows in map_sizes:
             for iter in iterations:
-                compareSoms(
-                    n_rows, n_cols, iter, data, RejectApproaches.CLOSEST_NEIGHBOUR
-                )
-                print(time.time() - start)
-                # compareAccuracies(
-                #     n_rows, n_rows, iter, data, 10, RejectApproaches.CLOSEST_NEIGHBOUR
+                # compareSoms(
+                #     n_rows, n_cols, iter, data, RejectApproaches.CLOSEST_NEIGHBOUR
                 # )
+                # print(time.time() - start)
+                compareAccuracies(
+                    n_rows, n_rows, iter, data, 5, RejectApproaches.CLOSEST_NEIGHBOUR
+                )
