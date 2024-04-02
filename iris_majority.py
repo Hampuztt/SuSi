@@ -177,6 +177,7 @@ def createReportAndConfussionMatrix(
 ):
     cm = confusion_matrix(y_test, y_pred)
     cm = cm.astype("float") / cm.sum(axis=1)[:, np.newaxis]
+    cm = np.where(cm < 0.01, 0, cm)
     # report = classification_report(
     #     y_test, y_pred, target_names=data.target_names, output_dict=True
     # )
@@ -434,11 +435,15 @@ def compareAccuracies(
     majority_voting_accuracies = []
     supervised_som_accuracies = []
     count = 0
+
     for i in range(comparisons):
-        print(count)
         count += 1
+        print(f"Iteration :{count}")
         X_train, X_test, y_train, y_test = train_test_split(
             dataset.data, dataset.target, test_size=0.7, random_state=random_state + i
+        )
+        print(
+            f"x_train: {X_train.shape}, x_test: {X_test.shape}, y_train {y_train.shape}, y_test {y_test.shape}"
         )
         X_train = scaler.fit_transform(X_train)
         X_test = scaler.transform(X_test)
@@ -590,10 +595,10 @@ if __name__ == "__main__":
     for data in datasets:
         for n_cols, n_rows in map_sizes:
             for iter in iterations:
-                # compareSoms(
-                #     n_rows, n_cols, iter, data, RejectApproaches.CLOSEST_NEIGHBOUR
-                # )
-                # print(time.time() - start)
-                compareAccuracies(
-                    n_rows, n_rows, iter, data, 5, RejectApproaches.CLOSEST_NEIGHBOUR
+                compareSoms(
+                    n_rows, n_cols, iter, data, RejectApproaches.CLOSEST_NEIGHBOUR
                 )
+                # print(time.time() - start)
+                # compareAccuracies(
+                #     n_rows, n_rows, iter, data, 5, RejectApproaches.CLOSEST_NEIGHBOUR
+                # )
