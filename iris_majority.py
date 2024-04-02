@@ -72,9 +72,14 @@ def load_hyperspectral_data() -> Bunch:
     data_reshaped = data.reshape((nrows * ncols, nbands))
     gt_reshaped = gt.flatten()
 
+    # Remove cases where gt == 0
+    valid_indices = gt_reshaped > 0
+    data_filtered = data_reshaped[valid_indices]
+    gt_filtered = gt_reshaped[valid_indices]
+
     return Bunch(
-        data=data_reshaped,
-        target=gt_reshaped,
+        data=data_filtered,
+        target=gt_filtered,
         feature_names=[f"Band {i+1}" for i in range(nbands)],
         target_names=target_names,
         DESCR="Hyperspectral Image Dataset",
@@ -350,7 +355,7 @@ def compareSoms(
     iterations: int,
     dataset: Bunch,
     reject_approach=RejectApproaches.IGNORE,
-    random_state=10,
+    random_state=43,
 ):
     parameters = ParametersFromPaper()
     LEARN_START = 0.7
