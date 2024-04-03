@@ -355,7 +355,7 @@ def compareSoms(
     iterations: int,
     dataset: Bunch,
     reject_approach=RejectApproaches.IGNORE,
-    random_state=43,
+    random_state=45,
 ):
     parameters = ParametersFromPaper()
     LEARN_START = 0.7
@@ -600,10 +600,10 @@ if __name__ == "__main__":
     for data in datasets:
         for n_cols, n_rows in map_sizes:
             for iter in iterations:
-                compareSoms(
-                    n_rows, n_cols, iter, data, RejectApproaches.CLOSEST_NEIGHBOUR
-                )
-                # print(time.time() - start)
-                # compareAccuracies(
-                #     n_rows, n_rows, iter, data, 5, RejectApproaches.CLOSEST_NEIGHBOUR
+                # compareSoms(
+                #     n_rows, n_cols, iter, data, RejectApproaches.CLOSEST_NEIGHBOUR
                 # )
+                # print(time.time() - start)
+                compareAccuracies(
+                    n_rows, n_rows, iter, data, 10, RejectApproaches.CLOSEST_NEIGHBOUR
+                )
