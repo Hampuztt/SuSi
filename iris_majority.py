@@ -67,7 +67,7 @@ def load_hyperspectral_data() -> Bunch:
     gt = gt_dict["salinas_gt"]
 
     # Reshape the data
-    print(data.shape)
+    print(f"Unflattened hyperspectral data shape: {data.shape}")
     nrows, ncols, nbands = data.shape
     data_reshaped = data.reshape((nrows * ncols, nbands))
     gt_reshaped = gt.flatten()
@@ -345,7 +345,7 @@ def compareSoms(
         n_rows=n_rows,
         n_columns=n_cols,
         n_iter_unsupervised=iterations,
-        random_state=55,
+        random_state=random_state,
     )
     majority_som.fit(X_train)
     print("unsuper finish")
