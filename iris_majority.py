@@ -3,7 +3,6 @@ from dataclasses import dataclass
 from typing import List, Dict, Tuple, Union, Any
 from sklearn.metrics import confusion_matrix, classification_report, accuracy_score  # type: ignore
 from scipy.io import loadmat
-from pprint import pprint
 
 # import pandas as pd
 import random
@@ -13,8 +12,8 @@ from sklearn.model_selection import train_test_split  # type: ignore
 from sklearn.preprocessing import MinMaxScaler, StandardScaler  # type: ignore
 from sklearn import datasets  # type: ignore
 from sklearn.utils import Bunch  # type: ignore
-from scipy.stats import mode  # type: ignore
 import susi  # type: ignore
+import statistics
 from susi.SOMPlots import plot_nbh_dist_weight_matrix, plot_umatrix  # type: ignore
 from enum import Enum, auto
 
@@ -64,15 +63,16 @@ def load_hyperspectral_data() -> Bunch:
     }
 
     target_names = [label_to_name[label] for label in sorted(label_to_name)]
-    data = data_dict[list(data_dict.keys())[-1]]
-    gt = gt_dict[list(gt_dict.keys())[-1]]
+    data = data_dict["salinas"]
+    gt = gt_dict["salinas_gt"]
 
     # Reshape the data
+    print(data.shape)
     nrows, ncols, nbands = data.shape
     data_reshaped = data.reshape((nrows * ncols, nbands))
     gt_reshaped = gt.flatten()
 
-    # Remove cases where gt == 0
+    # Remove cases where gt == 0 (unlabeled data)
     valid_indices = gt_reshaped > 0
     data_filtered = data_reshaped[valid_indices]
     gt_filtered = gt_reshaped[valid_indices]
@@ -210,42 +210,6 @@ def createReportAndConfussionMatrix(
     plt.show()
 
 
-def find_nearest_class_by_distance_optimized(
-    labeled_neurons: np.ndarray, bmu_position: np.ndarray
-) -> int:
-    max_distance = max(labeled_neurons.shape)
-
-    # Create a masked array where unclassified neurons are masked out
-    masked_labeled_neurons = np.ma.masked_array(
-        labeled_neurons, mask=labeled_neurons == None
-    )
-
-    for distance in range(1, max_distance):
-        min_row = max(0, bmu_position[0] - distance)
-        max_row = min(bmu_position[0] + distance + 1, labeled_neurons.shape[0])
-        min_col = max(0, bmu_position[1] - distance)
-        max_col = min(bmu_position[1] + distance + 1, labeled_neurons.shape[1])
-
-        # Extracting edge elements at a given "Manhattan distance" from bmu_position
-        top_edge = masked_labeled_neurons[min_row:max_row, min_col].compressed()
-        bottom_edge = masked_labeled_neurons[min_row:max_row, max_col - 1].compressed()
-        left_edge = masked_labeled_neurons[
-            min_row, min_col + 1 : max_col - 1
-        ].compressed()
-        right_edge = masked_labeled_neurons[
-            max_row - 1, min_col + 1 : max_col - 1
-        ].compressed()
-
-        neighbors = np.concatenate([top_edge, bottom_edge, left_edge, right_edge])
-
-        if neighbors.size > 0:
-            best_prediction = mode(neighbors, nan_policy="omit").mode
-            if best_prediction.size:
-                return best_prediction[0]
-
-    assert False, "No predictions made at all"
-
-
 def find_nearest_class_by_distance(
     labeled_neurons: np.ndarray, bmu_position: np.ndarray
 ) -> int:
@@ -261,30 +225,33 @@ def find_nearest_class_by_distance(
     """
 
     def get_neighbors_at_distance(x: int, y: int, distance: int) -> List[Any]:
+        """Retrieve neighbors around point `labeled_neurons[x][y]` at a specified distance."""
         neighbors = []
-        for i in range(
-            max(0, x - distance), min(x + distance + 1, labeled_neurons.shape[0])
-        ):
-            for j in range(
-                max(0, y - distance), min(y + distance + 1, labeled_neurons.shape[1])
-            ):
+        x_start = max(0, x - distance)
+        x_end = min(x + distance + 1, labeled_neurons.shape[0])
+        y_start = max(0, y - distance)
+        y_end = min(y + distance + 1, labeled_neurons.shape[1])
+
+        for i in range(x_start, x_end):
+            for j in range(y_start, y_end):
+                # Include points at exactly 'distance' away
                 if abs(x - i) == distance or abs(y - j) == distance:
                     neighbor_value = labeled_neurons[i, j]
                     if neighbor_value is not None:  # Exclude None values
                         neighbors.append(neighbor_value)
         return neighbors
 
-    for distance in range(1, max(labeled_neurons.shape[0], labeled_neurons.shape[1])):
+    for distance in range(1, max(labeled_neurons.shape)):
         neighbors = get_neighbors_at_distance(
             bmu_position[0], bmu_position[1], distance
         )
         if neighbors:
-            best_prediction = mode(neighbors)
-            best_prediction = np.atleast_1d(best_prediction)
-            if best_prediction.size:
+            best_prediction = statistics.mode(neighbors)
+            if best_prediction:
                 # Uncomment to modify the neuron_clases
-                # prediction_grid[x, y] = best_prediction[0]
-                return best_prediction[0]
+                # prediction_grid[x, y] = best_prediction
+                return best_prediction
+    # Will only happend if entire predicted_labels are filled with None
     assert False, "No predictions made at all"
 
 
@@ -306,10 +273,10 @@ def filter_and_predict_test_samples(
     - y_pred: The predicted classes for the filtered test set features.
     """
     bmus = som.get_bmus(X_test)
-    # y_pred = np.array([])
-    # new_x_test, new_y_test = np.empty((0, X_test.shape[1])), np.array([])
     new_x_test_list, new_y_test_list, y_pred_list = [], [], []
 
+    # Used to find how many different classes the som will predict with the dataset
+    # So it chooses a random between those when unlabeled bmu is found
     if reject_approach is RejectApproaches.RANDOM:
         predicted_classes = [
             labeled_neurons[bmu[0]][bmu[1]]
@@ -318,13 +285,7 @@ def filter_and_predict_test_samples(
         ]
         amountOfPredictedClasses = len(np.unique(predicted_classes))
 
-    print(len(bmus))
-    one_percent = len(bmus) // 100
-    count = 0
     for i, neuron_pos in enumerate(bmus):
-        # if i % one_percent == 0:
-        #     count += 1
-        # print(f"Finished {count} % of filter loop")
         neuron_class = labeled_neurons[neuron_pos[0]][neuron_pos[1]]
         # If the bmu is a neuron without an assigned class
         if neuron_class is None:
@@ -358,8 +319,10 @@ def compareSoms(
     random_state=45,
 ):
     parameters = ParametersFromPaper()
-    LEARN_START = 0.7
-    LEARN_END = 0.07
+    LEARN_START = parameters.learning_start
+    LEARN_END = parameters.learning_end
+    # LEARN_END = 0.07
+    # LEARN_START = 0.7
 
     X_train, X_test, y_train, y_test = train_test_split(
         dataset.data,
@@ -371,21 +334,9 @@ def compareSoms(
     scaler = StandardScaler()
     X_train = scaler.fit_transform(X_train)
     X_test = scaler.transform(X_test)
-    print(X_train.shape, X_test.shape)
-    supervised_som = susi.SOMClassifier(
-        learning_rate_start=parameters.learning_start,
-        learning_rate_end=parameters.learning_end,
-        n_rows=n_rows,
-        n_columns=n_cols,
-        n_iter_unsupervised=iterations,
-        n_iter_supervised=iterations,
-        random_state=random_state,
-        do_class_weighting=False,
+    print(
+        f"x_train: {X_train.shape}, x_test: {X_test.shape}, y_train {y_train.shape}, y_test {y_test.shape}"
     )
-    supervised_som.fit(X_train, y_train)
-    print("supervised finish")
-    supervised_y_pred = supervised_som.predict(X_test)
-    print("majority %", supervised_som.score(X_test, y_test) * 100)
 
     # Start training unsupervised som
     majority_som = susi.SOMClustering(
@@ -407,6 +358,22 @@ def compareSoms(
         majority_som, X_test, y_test, labeled_neurons, reject_approach
     )
     print("filter finish")
+
+    supervised_som = susi.SOMClassifier(
+        learning_rate_start=parameters.learning_start,
+        learning_rate_end=parameters.learning_end,
+        n_rows=n_rows,
+        n_columns=n_cols,
+        n_iter_unsupervised=iterations,
+        n_iter_supervised=iterations,
+        random_state=random_state,
+        do_class_weighting=False,
+    )
+    supervised_som.fit(X_train, y_train)
+    print("Supervised training finished")
+    supervised_y_pred = supervised_som.predict(filtered_x_test)
+    print(supervised_y_pred)
+    print("supervised %", supervised_som.score(filtered_x_test, filtered_y_test) * 100)
 
     createReportAndConfussionMatrix(
         majority_som,
@@ -600,10 +567,10 @@ if __name__ == "__main__":
     for data in datasets:
         for n_cols, n_rows in map_sizes:
             for iter in iterations:
-                # compareSoms(
-                #     n_rows, n_cols, iter, data, RejectApproaches.CLOSEST_NEIGHBOUR
-                # )
-                # print(time.time() - start)
-                compareAccuracies(
-                    n_rows, n_rows, iter, data, 10, RejectApproaches.CLOSEST_NEIGHBOUR
+                compareSoms(
+                    n_rows, n_cols, iter, data, RejectApproaches.CLOSEST_NEIGHBOUR
                 )
+                # print(time.time() - start)
+                # compareAccuracies(
+                #     n_rows, n_rows, iter, data, 10, RejectApproaches.CLOSEST_NEIGHBOUR
+                # )
